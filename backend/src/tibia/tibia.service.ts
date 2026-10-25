@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
+import { isAxiosError } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import { CreatureDetail, CreatureSummary } from './creature.interface';
 
-const BASE_URL = 'https://api.tibiadata.com/v4';
+const BASE_URL = 'https://api.tibiadata.com/v5';
 
 @Injectable()
 export class TibiaService {
@@ -19,13 +20,20 @@ export class TibiaService {
   }
 
   async getCreature(race: string): Promise<CreatureDetail | null> {
-    // TibiaData responds with HTTP 400 (not 200) when the race is invalid,
-    // which makes Axios reject the request — treat any request failure as "not found".
     let response;
     try {
       response = await firstValueFrom(this.http.get(`${BASE_URL}/creature/${race}`));
-    } catch {
-      return null;
+    } catch (error) {
+      if (isAxiosError(error)) {
+        if (error.response?.status === 404) {
+          return null;
+        }
+        if (error.response?.status === 400) {
+          throw new BadRequestException('Invalid TibiaData API request', { cause: error });
+        }
+        throw new BadGatewayException('TibiaData API request failed', { cause: error });
+      }
+      throw error;
     }
     const c = response.data.creature;
     if (!c?.name) {
